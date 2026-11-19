@@ -29,10 +29,14 @@ jobs:
           JEKYLL_ENV: production
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
           SITE_ORIGIN: ${{ steps.pages.outputs.origin }}
-        run: bundle exec jekyll build --baseurl "$BASE_PATH" --url "$SITE_ORIGIN" --destination "$GITHUB_WORKSPACE/public"
+        run: |
+          printf 'url: "%s"\nbaseurl: "%s"\n' "$SITE_ORIGIN" "$BASE_PATH" > "$RUNNER_TEMP/adk-pages.yml"
+          bundle exec jekyll build --config "_config.yml,$RUNNER_TEMP/adk-pages.yml" --destination "$GITHUB_WORKSPACE/public"
       - name: Build offline edition
         working-directory: source
-        run: bundle exec jekyll build --baseurl '' --url 'http://127.0.0.1:8765' --destination "$GITHUB_WORKSPACE/offline"
+        run: |
+          printf 'url: "http://127.0.0.1:8765"\nbaseurl: ""\n' > "$RUNNER_TEMP/adk-offline.yml"
+          bundle exec jekyll build --config "_config.yml,$RUNNER_TEMP/adk-offline.yml" --destination "$GITHUB_WORKSPACE/offline"
       - name: Validate generated records
         run: |
           python - <<'PY'
