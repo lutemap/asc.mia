@@ -1,0 +1,83 @@
+name: ADK CollectionBuilder
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: unzip -q ADK-CollectionBuilder.zip -d source
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: source
+          bundler-cache: true
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Build GitHub Pages
+        working-directory: source
+        env:
+          JEKYLL_ENV: production
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          SITE_ORIGIN: ${{ steps.pages.outputs.origin }}
+        run: bundle exec jekyll build --baseurl "$BASE_PATH" --url "$SITE_ORIGIN" --destination "$GITHUB_WORKSPACE/public"
+      - name: Build offline edition
+        working-directory: source
+        run: bundle exec jekyll build --baseurl '' --url 'http://127.0.0.1:8765' --destination "$GITHUB_WORKSPACE/offline"
+      - name: Validate generated records
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for root in (Path('public'), Path('offline')):
+              for i in range(1,76):
+                  assert (root / f'items/adk-{i:04}.html').is_file(), (root,i,'item')
+                  assert (root / f'objects/adk-{i:04}.jpg').is_file(), (root,i,'image')
+              for file in ['index.html','browse.html','data.html','subjects.html']:
+                  assert (root / file).is_file(), (root,file)
+          PY
+      - name: Add offline launcher
+        run: |
+          cat > offline/ENVANTERI-AC.bat <<'BAT'
+          @echo off
+          cd /d "%~dp0"
+          where py >nul 2>&1
+          if not errorlevel 1 (
+            start "ADK yerel sunucu" py -3 -m http.server 8765 --bind 127.0.0.1
+          ) else (
+            where python >nul 2>&1
+            if errorlevel 1 (
+              echo Python 3 gerekli. Bu bilgisayarda bulunamadi.
+              pause
+              exit /b 1
+            )
+            start "ADK yerel sunucu" python -m http.server 8765 --bind 127.0.0.1
+          )
+          timeout /t 2 /nobreak >nul
+          start "" http://127.0.0.1:8765/
+          BAT
+          sed -i 's/$/\r/' offline/ENVANTERI-AC.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ADK-USB
+          path: offline/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public/
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
